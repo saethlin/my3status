@@ -1,0 +1,12 @@
+[package]
+name = "my3status"
+version = "0.1.0"
+authors = ["Ben Kimock <kimockb@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+libc = "0.2"
+libpulse-binding = "*"
+
+[profile.release]
+debug = 1
