@@ -141,15 +141,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let cpu_utilization = 100.0 * (1.0 - (idle_cycles as f64 / cycles_elapsed as f64));
 
         print!("[");
-        print!(
-            "{{\"color\":\"#ffffff\",\"full_text\":\"{:02.0}%\"}},",
-            cpu_utilization
-        );
+        print!("{{\"full_text\":\"{:02.0}%\"}},", cpu_utilization);
 
         let temp_bytes = cpu_temp.read_str(&mut buf)?;
 
         print!(
-            "{{\"color\":\"#ffffff\",\"full_text\":\"{}°C\"}},",
+            "{{\"full_text\":\"{}°C\"}},",
             u64::from_str(temp_bytes.trim()).unwrap() / 1000
         );
 
