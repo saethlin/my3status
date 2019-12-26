@@ -64,10 +64,27 @@ struct NetworkDevice {
     operstate: File,
 }
 
+fn open_battery_file() -> Result<Battery, Box<dyn std::error::Error>> {
+    let charge_full_design =
+        std::fs::read_to_string("/sys/class/power_supply/BAT0/charge_full_design")?
+            .trim()
+            .parse::<f64>()
+            .unwrap();
+    Ok(Battery {
+        charge_full_design,
+        charge_now: File::open("/sys/class/power_supply/BAT0/charge_now")?,
+    })
+}
+
+struct Battery {
+    charge_full_design: f64,
+    charge_now: File,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cpu_stats = File::open("/proc/stat").unwrap();
     let mut cpu_temp = open_cpu_temperatures_file().unwrap();
-    let mut battery = File::open("/sys/class/power_supply/BAT0").unwrap();
+    let mut battery = open_battery_file().ok();
 
     let desired_network_devices = std::env::args().skip(1).collect::<Vec<_>>();
     let mut network_devices = Vec::new();
@@ -84,8 +101,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut cpu_fields: Vec<u64> = Vec::new();
     let mut previous_cpu_fields = cpu_fields.clone();
-
-    println!("{:?}", battery.read_str(&mut buf));
 
     cpu_fields.extend(
         cpu_stats
@@ -163,6 +178,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 print!(
                     "{{\"color\":\"#ff0000\",\"full_text\":\"{}: {}\"}},",
                     device.name, state
+                );
+            }
+        }
+
+        if let Some(battery) = battery.as_mut() {
+            if let Ok(text) = battery.charge_now.read_str(&mut buf) {
+                let charge_now = text.trim().parse::<f64>().unwrap();
+                print!(
+                    "{{\"full_text\":\"BAT {:.2}%\"}},",
+                    charge_now / battery.charge_full_design * 100.0
                 );
             }
         }
