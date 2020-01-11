@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 libc = "0.2"
+#libpulse-binding = {version = "2.0", default-features = false}
 
 [profile.release]
 debug = 1

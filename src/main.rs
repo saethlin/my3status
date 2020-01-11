@@ -62,6 +62,7 @@ fn open_cpu_temperatures_file() -> std::io::Result<File> {
 struct NetworkDevice {
     name: String,
     operstate: File,
+    valid: bool,
 }
 
 fn open_battery_file() -> Result<Battery, Box<dyn std::error::Error>> {
@@ -82,6 +83,20 @@ struct Battery {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /*
+    let mainloop = libpulse_binding::mainloop::standard::Mainloop::new().expect("no mainloop");
+    let context = libpulse_binding::context::Context::new(&mainloop, "pulseaudio")
+        .expect("failed to get context");
+
+    let intro = context.introspect();
+    intro.get_sink_info_list(|info| {
+        use libpulse_binding::callbacks::ListResult;
+        if let ListResult::Item(it) = info {
+            println!("{:#?}", it);
+        }
+    });
+    */
+
     let mut cpu_stats = File::open("/proc/stat").unwrap();
     let mut cpu_temp = open_cpu_temperatures_file().unwrap();
     let mut battery = open_battery_file().ok();
@@ -93,6 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             network_devices.push(NetworkDevice {
                 name: name.clone(),
                 operstate: f,
+                valid: true,
             })
         }
     }
@@ -164,20 +180,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             free_space as f64 / 1024. / 1024. / 1024.
         );
 
-        for device in &mut network_devices {
-            let state = device.operstate.read_str(&mut buf)?.trim();
-            if state == "up" {
-                print!(
-                    "{{\"color\":\"#00ff00\",\"full_text\":\"{}: up\"}},",
-                    device.name,
-                );
-            } else {
-                print!(
-                    "{{\"color\":\"#ff0000\",\"full_text\":\"{}: {}\"}},",
-                    device.name, state
-                );
+        // Add any desired network devices if they exist but aren't in the array
+        for name in &desired_network_devices {
+            if network_devices
+                .iter_mut()
+                .find(|d| &d.name == name)
+                .is_none()
+            {
+                if let Ok(f) = File::open(format!("/sys/class/net/{}/operstate", name)) {
+                    network_devices.push(NetworkDevice {
+                        name: name.clone(),
+                        operstate: f,
+                        valid: true,
+                    })
+                }
             }
         }
+
+        // Print info for network devices, mark any that don't exist as invalid
+        for desired_device in &desired_network_devices {
+            if let Some(device) = network_devices
+                .iter_mut()
+                .find(|d| &d.name == desired_device)
+            {
+                match device.operstate.read_str(&mut buf).map(str::trim) {
+                    Ok(state) => {
+                        if state == "up" {
+                            print!(
+                                "{{\"color\":\"#00ff00\",\"full_text\":\"{}: up\"}},",
+                                device.name,
+                            );
+                        } else {
+                            print!(
+                                "{{\"color\":\"#ff0000\",\"full_text\":\"{}: {}\"}},",
+                                device.name, state
+                            );
+                        }
+                    }
+
+                    Err(_) => device.valid = false,
+                }
+            }
+        }
+
+        // Remove invalid network devices
+        network_devices = network_devices.into_iter().filter(|d| d.valid).collect();
 
         if let Some(battery) = battery.as_mut() {
             if let Ok(text) = battery.charge_now.read_str(&mut buf) {
@@ -203,7 +250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!(
             "{{\"full_text\":\"{:04}-{:02}-{:02} {} {:02}:{:02}:{:02}\"}}",
             tm.tm_year + 1900,
-            tm.tm_mon,
+            tm.tm_mon + 1,
             tm.tm_mday,
             days.get(tm.tm_wday as usize).unwrap_or(&"???"),
             tm.tm_hour,
